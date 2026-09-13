@@ -62,15 +62,15 @@ class BankAccount(AbstractAccount):
 
     def deposit(self, amount):
         self._check_status()
-        if amount <= 0:
-            raise InvalidOperationError("Сумма должна быть положительной")
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            raise InvalidOperationError("Сумма должна быть положительным числом")
         self._balance += amount
         return True
 
     def withdraw(self, amount):
         self._check_status()
-        if amount <= 0:
-            raise InvalidOperationError("Сумма должна быть положительной")
+        if not isinstance(amount, (int, float)) or amount <= 0:
+            raise InvalidOperationError("Сумма должна быть положительным числом")
         if amount > self._balance:
             raise InsufficientFundsError("Недостаточно средств")
         self._balance -= amount
@@ -82,34 +82,40 @@ class BankAccount(AbstractAccount):
     def __str__(self):
         return f"BankAccount, {self.owner}, {self.account_id[-4:]}, {self.status}, {self._balance}, {self.currency}"
 
+    @property
+    def balance(self):
+        return self._balance
+
 # Демонстрация работы
-account1 = BankAccount(
-    owner="Наиля",
-    balance=10000,
-    status="active",
-    currency="RUB"
-)
+if __name__ == "__main__":
+    account1 = BankAccount(
+        owner="Наиля",
+        balance=10000,
+        status="active",
+        currency="RUB"
+    )
 
-account2 = BankAccount(
-    owner="Наиля",
-    balance=5000,
-    status="frozen",
-    currency="RUB"
-)
-# Проверка №1
-print(account1)
-print(account2)
+    account2 = BankAccount(
+        owner="Наиля",
+        balance=5000,
+        status="frozen",
+        currency="RUB"
+    )
 
-# Проверка №2
-try:
-    account2.deposit(1000)
-except AccountFrozenError as e:
-    print(e)
+    # Проверка №1
+    print(account1)
+    print(account2)
 
-# Проверка №3
-account1.deposit(2000)
-print(account1)
+    # Проверка №2
+    try:
+        account2.deposit(1000)
+    except AccountFrozenError as e:
+        print(e)
 
-# Проверка №4
-account1.withdraw(3000)
-print(account1)
+    # Проверка №3
+    account1.deposit(2000)
+    print(account1)
+
+    # Проверка №4
+    account1.withdraw(3000)
+    print(account1)
