@@ -20,7 +20,7 @@ class AbstractAccount(ABC):
         self._balance = balance
         self.status = status
 
-    @abstractmethod #любой конкретный класс-наследник обязан иметь свой deposit()
+    @abstractmethod
     def deposit(self, amount):
         pass
 
@@ -33,9 +33,10 @@ class AbstractAccount(ABC):
         pass
 
     # AbstractAccount — это каркас.
-    # Он говорит: Любой настоящий счёт должен иметь ID, владельца, баланс, статус
-    # и уметь пополняться, снимать деньги и выдавать информацию о себе.
-    # Но сам AbstractAccount не знает, как именно это делать.
+    # Он говорит: любой конкретный счёт должен иметь ID,
+    # владельца, баланс, статус и уметь пополняться,
+    # снимать деньги и выдавать информацию о себе.
+
 
 class BankAccount(AbstractAccount):
     def __init__(self, owner, balance, status, currency, account_id=None):
@@ -44,13 +45,21 @@ class BankAccount(AbstractAccount):
         allowed_currencies = ["RUB", "USD", "EUR", "KZT", "CNY"]
         allowed_statuses = ["active", "frozen", "closed"]
         if currency not in allowed_currencies:
-            raise InvalidOperationError("Недопустимая валюта") # raise должен создать объект ошибки, а не просто ссылаться на класс, поэтому нужно указать в скобках текст
+            raise InvalidOperationError("Недопустимая валюта")
+
         if account_id is None:
             account_id = str(uuid.uuid4())[:8]
-        if balance < 0:
-            raise InvalidOperationError("Баланс не может быть отрицательным")
+
+        # Проверяем не только значение баланса,
+        # но и его тип
+        if not isinstance(balance, (int, float)) or balance < 0:
+            raise InvalidOperationError(
+                "Баланс должен быть неотрицательным числом"
+            )
+
         if status not in allowed_statuses:
             raise InvalidOperationError("Недопустимый статус")
+
         super().__init__(account_id, owner, balance, status)
         self.currency = currency
 
@@ -63,28 +72,42 @@ class BankAccount(AbstractAccount):
     def deposit(self, amount):
         self._check_status()
         if not isinstance(amount, (int, float)) or amount <= 0:
-            raise InvalidOperationError("Сумма должна быть положительным числом")
+            raise InvalidOperationError(
+                "Сумма должна быть положительным числом"
+            )
+
         self._balance += amount
         return True
 
     def withdraw(self, amount):
         self._check_status()
         if not isinstance(amount, (int, float)) or amount <= 0:
-            raise InvalidOperationError("Сумма должна быть положительным числом")
+            raise InvalidOperationError(
+                "Сумма должна быть положительным числом"
+            )
+
         if amount > self._balance:
             raise InsufficientFundsError("Недостаточно средств")
+
         self._balance -= amount
         return True
 
     def get_account_info(self):
-        return f"{self.account_id}, {self.owner}, {self._balance}, {self.status}, {self.currency}"
+        return (
+            f"{self.account_id}, {self.owner}, "
+            f"{self._balance}, {self.status}, {self.currency}"
+        )
 
     def __str__(self):
-        return f"BankAccount, {self.owner}, {self.account_id[-4:]}, {self.status}, {self._balance}, {self.currency}"
+        return (
+            f"BankAccount, {self.owner}, {self.account_id[-4:]}, "
+            f"{self.status}, {self._balance}, {self.currency}"
+        )
 
     @property
     def balance(self):
         return self._balance
+
 
 # Демонстрация работы
 if __name__ == "__main__":
