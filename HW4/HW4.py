@@ -1,7 +1,12 @@
 import uuid
 from datetime import datetime, timedelta
 
-from HW1.HW1 import BankAccount, InvalidOperationError, InsufficientFundsError
+from HW1.HW1 import (
+    BankAccount,
+    InvalidOperationError,
+    InsufficientFundsError,
+    check_operation_time as check_financial_operation_time
+)
 from HW2.HW2 import PremiumAccount
 
 
@@ -94,15 +99,18 @@ class TransactionQueue:
         ready_transactions = []
 
         for transaction in self.transactions:
+            # Обрабатываем только pending-транзакции
             if transaction.status != "pending":
                 continue
 
+            # Проверяем время отложенной транзакции
             if transaction.execute_at is not None:
                 if transaction.execute_at > current_time:
                     continue
 
             ready_transactions.append(transaction)
 
+        # Сначала транзакции с большим приоритетом
         ready_transactions.sort(
             key=lambda transaction: transaction.priority,
             reverse=True
@@ -163,7 +171,10 @@ class TransactionProcessor:
             )
 
         amount_in_rub = amount / self.exchange_rates[from_currency]
-        converted_amount = amount_in_rub * self.exchange_rates[to_currency]
+
+        converted_amount = (
+            amount_in_rub * self.exchange_rates[to_currency]
+        )
 
         return converted_amount
 
@@ -187,30 +198,58 @@ class TransactionProcessor:
     # --------------------------------------------------------
 
     def process_transaction(self, transaction):
+
+        # ====================================================
+        # 1. Повторно выполнять можно только pending
+        # ====================================================
+
+        if transaction.status != "pending":
+            transaction.failure_reason = (
+                f"Нельзя обработать транзакцию со статусом "
+                f"{transaction.status}"
+            )
+
+            return False
+
+        # Каждая попытка обработки учитывается
         transaction.attempts += 1
 
         try:
+            # =================================================
+            # 2. Проверяем время операции
+            # =================================================
+
+            check_financial_operation_time()
+
             sender = transaction.sender
             receiver = transaction.receiver
 
-            # Проверяем статус счетов
+            # =================================================
+            # 3. Проверяем статус счетов
+            # =================================================
+
             self.check_account(sender)
             self.check_account(receiver)
 
-            # Рассчитываем комиссию
-            transaction.commission = self.calculate_commission(
-                transaction
+            # =================================================
+            # 4. Рассчитываем комиссию
+            # =================================================
+
+            transaction.commission = (
+                self.calculate_commission(transaction)
             )
 
-            # Сколько нужно списать со счета отправителя
+            # =================================================
+            # 5. Сколько списываем у отправителя
+            # =================================================
+
             total_to_withdraw = (
                 transaction.amount + transaction.commission
             )
 
-            # ------------------------------------------------
-            # Если валюта транзакции отличается от валюты
-            # счета отправителя — конвертируем сумму списания.
-            # ------------------------------------------------
+            # =================================================
+            # 6. Конвертируем сумму для счета отправителя
+            # =================================================
 
             sender_amount = self.convert_currency(
                 total_to_withdraw,
@@ -218,26 +257,27 @@ class TransactionProcessor:
                 sender.currency
             )
 
-            # ------------------------------------------------
-            # Проверяем средства.
-            #
-            # Для обычного счета отрицательный баланс запрещен.
-            # Для PremiumAccount допускается овердрафт.
-            # ------------------------------------------------
+            # =================================================
+            # 7. Проверяем средства
+            # =================================================
 
             if not isinstance(sender, PremiumAccount):
+
                 if sender.balance < sender_amount:
                     raise InsufficientFundsError(
                         "Недостаточно средств для выполнения перевода"
                     )
 
-            # Списание
+            # =================================================
+            # 8. Списание
+            # =================================================
+
             sender.withdraw(sender_amount)
 
-            # ------------------------------------------------
-            # Сумма, которая поступит получателю.
-            # Комиссия не переводится получателю.
-            # ------------------------------------------------
+            # =================================================
+            # 9. Рассчитываем сумму для получателя
+            #    Комиссия получателю не передается
+            # =================================================
 
             receiver_amount = self.convert_currency(
                 transaction.amount,
@@ -245,7 +285,15 @@ class TransactionProcessor:
                 receiver.currency
             )
 
+            # =================================================
+            # 10. Зачисление
+            # =================================================
+
             receiver.deposit(receiver_amount)
+
+            # =================================================
+            # 11. Успешное завершение
+            # =================================================
 
             transaction.status = "completed"
             transaction.completed_at = datetime.now()
@@ -254,6 +302,11 @@ class TransactionProcessor:
             return True
 
         except Exception as error:
+
+            # =================================================
+            # Ошибка транзакции
+            # =================================================
+
             transaction.failure_reason = str(error)
 
             self.error_log.append(
@@ -265,6 +318,8 @@ class TransactionProcessor:
                 }
             )
 
+            # После максимального количества попыток
+            # транзакция становится failed
             if transaction.attempts >= self.max_retries:
                 transaction.status = "failed"
 
@@ -278,6 +333,7 @@ class TransactionProcessor:
         ready_transactions = queue.get_ready_transactions()
 
         for transaction in ready_transactions:
+
             while (
                 transaction.status == "pending"
                 and transaction.attempts < self.max_retries
@@ -285,13 +341,16 @@ class TransactionProcessor:
                 self.process_transaction(transaction)
 
     # --------------------------------------------------------
-    # Повторная обработка одной транзакции
+    # Повторная обработка failed-транзакции
     # --------------------------------------------------------
 
     def retry_transaction(self, transaction):
+
+        # Повторять можно только failed
         if transaction.status != "failed":
             return False
 
+        # Начинаем новый цикл попыток
         if transaction.attempts >= self.max_retries:
             transaction.attempts = 0
             transaction.status = "pending"
@@ -523,6 +582,7 @@ if __name__ == "__main__":
     queue.add_transaction(cancelled_transaction)
 
     print("\nОтмена отдельной транзакции:")
+
     print(
         queue.cancel_transaction(
             cancelled_transaction.transaction_id
@@ -532,7 +592,7 @@ if __name__ == "__main__":
     print(cancelled_transaction)
 
     # --------------------------------------------------------
-    # Выводим порядок обработки по приоритету
+    # Выводим порядок обработки
     # --------------------------------------------------------
 
     print("\nТранзакции, готовые к выполнению:")
@@ -575,6 +635,63 @@ if __name__ == "__main__":
             "ошибка:",
             transaction.failure_reason
         )
+
+    # --------------------------------------------------------
+    # Проверяем защиту от повторного выполнения
+    # --------------------------------------------------------
+
+    print("\nПроверка повторного выполнения:")
+
+    balance_before = account1.balance
+
+    repeat_result = processor.process_transaction(
+        transaction1
+    )
+
+    balance_after = account1.balance
+
+    print("Результат повторной обработки:", repeat_result)
+    print("Баланс до:", balance_before)
+    print("Баланс после:", balance_after)
+
+    if balance_before == balance_after:
+        print("OK: повторного списания не произошло")
+    else:
+        print("ERROR: баланс изменился")
+
+    # --------------------------------------------------------
+    # Проверяем отмененную транзакцию
+    # --------------------------------------------------------
+
+    print("\nПроверка отмененной транзакции:")
+
+    balance_before_cancelled = account1.balance
+
+    cancelled_result = processor.process_transaction(
+        cancelled_transaction
+    )
+
+    balance_after_cancelled = account1.balance
+
+    print(
+        "Результат обработки cancelled:",
+        cancelled_result
+    )
+
+    print(
+        "Баланс до:",
+        balance_before_cancelled
+    )
+
+    print(
+        "Баланс после:",
+        balance_after_cancelled
+    )
+
+    if balance_before_cancelled == balance_after_cancelled:
+        print("OK: cancelled транзакция не была выполнена")
+    else:
+        print("ERROR: cancelled транзакция изменила баланс")
 
     # --------------------------------------------------------
     # Итоговые балансы

@@ -136,19 +136,25 @@ class RiskAnalyzer:
         self.client_operations[sender_id].append(now)
 
         # -----------------------------------------
-        # 3. Проверка нового получателя
+        # 3. Проверка нового счёта получателя
         # -----------------------------------------
 
         if sender_id not in self.known_receivers:
             self.known_receivers[sender_id] = set()
 
-        receiver_id = transaction.receiver.client_id
+        # ВАЖНО:
+        # Запоминаем именно account_id получателя,
+        # а не client_id.
+        #
+        # У одного клиента может быть несколько счетов.
+        # Поэтому client_id здесь недостаточно.
+        receiver_account_id = transaction.receiver.account_id
 
-        if receiver_id not in self.known_receivers[sender_id]:
+        if receiver_account_id not in self.known_receivers[sender_id]:
             risk_points += 2
             reasons.append("перевод на новый счёт")
 
-        self.known_receivers[sender_id].add(receiver_id)
+        self.known_receivers[sender_id].add(receiver_account_id)
 
         # -----------------------------------------
         # 4. Проверка ночной операции
